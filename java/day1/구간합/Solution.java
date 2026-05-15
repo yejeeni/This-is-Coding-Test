@@ -3,7 +3,7 @@ package day1.구간합;
 import java.util.*;
 import java.io.*;
 
-public class 구간합 {
+public class Solution {
   public static void main(String args[]) throws IOException {
     BufferedReader bufferedReader = new BufferedReader(new InputStreamReader(System.in));
 

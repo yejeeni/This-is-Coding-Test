@@ -1,4 +1,4 @@
-package day2.question2;
+package day2.단어빈도수;
 
 import java.io.*;
 import java.util.*;

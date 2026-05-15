@@ -3,7 +3,7 @@ package day1.행렬안장점;
 import java.io.*;
 import java.util.*;
 
-public class 행렬안장점 {
+public class Solution {
   public static void main(String args[]) throws IOException{
     BufferedReader bufferedReader = new BufferedReader(new InputStreamReader(System.in));
 

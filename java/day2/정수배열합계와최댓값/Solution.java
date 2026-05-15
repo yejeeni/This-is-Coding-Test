@@ -1,4 +1,4 @@
-package day2.question1;
+package day2.정수배열합계와최댓값;
 
 import java.io.*;
 import java.util.*;
