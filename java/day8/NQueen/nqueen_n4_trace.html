@@ -1,0 +1,339 @@
+<!DOCTYPE html>
+<html>
+<head>
+<style>
+  body { font-family: 'Segoe UI', sans-serif; background: transparent; margin: 0; padding: 12px; color: #1a1a1a; }
+  h2 { font-size: 15px; font-weight: 700; margin: 0 0 12px 0; }
+  .container { display: flex; gap: 24px; align-items: flex-start; flex-wrap: wrap; }
+  
+  /* 체스판 */
+  .board-section { flex: 0 0 auto; }
+  .board-label { font-size: 12px; font-weight: 600; color: #555; margin-bottom: 6px; }
+  .board { display: grid; grid-template-columns: repeat(4, 44px); grid-template-rows: repeat(4, 44px); border: 2px solid #333; }
+  .cell { width: 44px; height: 44px; display: flex; align-items: center; justify-content: center; font-size: 22px; border: 1px solid #ccc; position: relative; }
+  .cell.white { background: #f5f0e8; }
+  .cell.black { background: #b58863; }
+  .cell.queen { }
+  .cell.conflict { background: #ffcccc !important; }
+  .cell.highlight { background: #fffacc !important; }
+  
+  /* 단계 컨트롤 */
+  .controls { display: flex; gap: 8px; margin-top: 10px; align-items: center; flex-wrap: wrap; }
+  button { padding: 6px 14px; border: none; border-radius: 6px; cursor: pointer; font-size: 13px; font-weight: 600; }
+  .btn-prev { background: #e8e8e8; color: #333; }
+  .btn-next { background: #4a90d9; color: white; }
+  .btn-prev:disabled { opacity: 0.4; cursor: default; }
+  .btn-next:disabled { opacity: 0.4; cursor: default; }
+  .step-counter { font-size: 12px; color: #666; }
+  
+  /* 설명 패널 */
+  .desc-section { flex: 1; min-width: 220px; }
+  .call-stack { background: #f8f8f8; border-radius: 8px; padding: 12px; margin-bottom: 10px; }
+  .call-stack-title { font-size: 11px; font-weight: 700; color: #888; text-transform: uppercase; margin-bottom: 8px; }
+  .stack-item { font-size: 13px; padding: 3px 8px; border-radius: 4px; margin-bottom: 3px; }
+  .stack-item.active { background: #4a90d9; color: white; font-weight: 700; }
+  .stack-item.done { background: #e0f0e0; color: #2a7a2a; }
+  .stack-item.waiting { background: #e8e8e8; color: #666; }
+  
+  .desc-box { background: #fff8e8; border-left: 3px solid #f0a500; border-radius: 4px; padding: 10px 12px; font-size: 13px; line-height: 1.6; }
+  .desc-box .tag { display: inline-block; font-size: 11px; font-weight: 700; padding: 1px 6px; border-radius: 3px; margin-bottom: 6px; }
+  .tag.success { background: #c8f0c8; color: #1a6a1a; }
+  .tag.fail { background: #ffd0d0; color: #8a1a1a; }
+  .tag.try { background: #d0e8ff; color: #1a4a8a; }
+  .tag.place { background: #fff0c0; color: #7a5a00; }
+
+  .col-info { font-size: 12px; color: #555; margin-top: 8px; font-family: monospace; background: #f0f0f0; padding: 4px 8px; border-radius: 4px; }
+  .count-display { font-size: 14px; font-weight: 700; margin-top: 8px; }
+  .count-display span { color: #4a90d9; }
+</style>
+</head>
+<body>
+<h2>N=4 N-Queen 재귀 흐름 시각화</h2>
+<div class="container">
+  <div class="board-section">
+    <div class="board-label">체스판 상태</div>
+    <div class="board" id="board"></div>
+    <div class="col-info" id="col-info">col = [ _, _, _, _ ]</div>
+    <div class="count-display">현재 count: <span id="count-display">0</span></div>
+    <div class="controls">
+      <button class="btn-prev" id="btn-prev" onclick="prev()">◀ 이전</button>
+      <button class="btn-next" id="btn-next" onclick="next()">다음 ▶</button>
+      <span class="step-counter" id="step-counter">1 / ?</span>
+    </div>
+  </div>
+  
+  <div class="desc-section">
+    <div class="call-stack">
+      <div class="call-stack-title">호출 스택 (지금 어디에 있나?)</div>
+      <div id="call-stack-items"></div>
+    </div>
+    <div class="desc-box" id="desc-box"></div>
+  </div>
+</div>
+
+<script>
+// N=4 N-Queen 시뮬레이션 단계들 (수동으로 주요 단계만)
+const steps = [
+  {
+    queens: [], // [row, col] 쌍들
+    highlight: [],
+    conflict: [],
+    stack: [{row:0, status:'active'}],
+    col: [null,null,null,null],
+    count: 0,
+    tag: 'try',
+    desc: '<b>nQueen(0)</b> 호출됨.<br>0행에 퀸을 놓을 자리를 찾아볼게요.<br>c=0부터 c=3까지 시도해봅니다.'
+  },
+  {
+    queens: [[0,0]],
+    highlight: [[0,0]],
+    conflict: [],
+    stack: [{row:0,status:'done'},{row:1,status:'active'}],
+    col: [0,null,null,null],
+    count: 0,
+    tag: 'place',
+    desc: '<b>0행 0열에 퀸 배치!</b><br>col[0] = 0<br>충돌 없으므로 <b>nQueen(1)</b> 호출.'
+  },
+  {
+    queens: [[0,0]],
+    highlight: [[1,0],[1,1]],
+    conflict: [[1,0],[1,1]],
+    stack: [{row:0,status:'done'},{row:1,status:'active'}],
+    col: [0,null,null,null],
+    count: 0,
+    tag: 'fail',
+    desc: '1행 c=0: <b>0열 충돌!</b> (0행에 이미 0열에 퀸)<br>1행 c=1: <b>대각선 충돌!</b> (|1-0|==|1-0|)<br>둘 다 건너뜀.'
+  },
+  {
+    queens: [[0,0],[1,2]],
+    highlight: [[1,2]],
+    conflict: [],
+    stack: [{row:0,status:'done'},{row:1,status:'done'},{row:2,status:'active'}],
+    col: [0,2,null,null],
+    count: 0,
+    tag: 'place',
+    desc: '1행 c=2: <b>충돌 없음!</b><br>col[1] = 2<br><b>nQueen(2)</b> 호출.'
+  },
+  {
+    queens: [[0,0],[1,2]],
+    highlight: [[2,0],[2,1],[2,2],[2,3]],
+    conflict: [[2,0],[2,1],[2,2],[2,3]],
+    stack: [{row:0,status:'done'},{row:1,status:'done'},{row:2,status:'active'}],
+    col: [0,2,null,null],
+    count: 0,
+    tag: 'fail',
+    desc: '2행 c=0~3 모두 충돌!<br>• c=0: 0열 충돌<br>• c=1: 대각선 충돌<br>• c=2: 2열 충돌<br>• c=3: 대각선 충돌<br>→ 갈 곳 없음. <b>return</b> (count 안 셈)'
+  },
+  {
+    queens: [[0,0],[1,3]],
+    highlight: [[1,3]],
+    conflict: [],
+    stack: [{row:0,status:'done'},{row:1,status:'done'},{row:2,status:'active'}],
+    col: [0,3,null,null],
+    count: 0,
+    tag: 'place',
+    desc: '1행 c=3: 충돌 없음!<br>col[1] = 3<br><b>nQueen(2)</b> 호출.'
+  },
+  {
+    queens: [[0,0],[1,3],[2,1]],
+    highlight: [[2,1]],
+    conflict: [],
+    stack: [{row:0,status:'done'},{row:1,status:'done'},{row:2,status:'done'},{row:3,status:'active'}],
+    col: [0,3,1,null],
+    count: 0,
+    tag: 'place',
+    desc: '2행 c=1: 충돌 없음!<br>col[2] = 1<br><b>nQueen(3)</b> 호출.'
+  },
+  {
+    queens: [[0,0],[1,3],[2,1]],
+    highlight: [[3,0],[3,1],[3,2],[3,3]],
+    conflict: [[3,0],[3,1],[3,2],[3,3]],
+    stack: [{row:0,status:'done'},{row:1,status:'done'},{row:2,status:'done'},{row:3,status:'active'}],
+    col: [0,3,1,null],
+    count: 0,
+    tag: 'fail',
+    desc: '3행 c=0~3 모두 충돌!<br>→ 갈 곳 없음. <b>return</b>.<br>2행으로 되돌아가서 다음 열 시도...<br>(c=2, c=3도 충돌 → 1행으로 백트래킹)'
+  },
+  {
+    queens: [[0,1]],
+    highlight: [[0,1]],
+    conflict: [],
+    stack: [{row:0,status:'done'},{row:1,status:'active'}],
+    col: [1,null,null,null],
+    count: 0,
+    tag: 'place',
+    desc: '0행 c=0은 막혔으니 c=1 시도!<br>col[0] = 1<br><b>nQueen(1)</b> 호출.'
+  },
+  {
+    queens: [[0,1],[1,3]],
+    highlight: [[1,3]],
+    conflict: [],
+    stack: [{row:0,status:'done'},{row:1,status:'done'},{row:2,status:'active'}],
+    col: [1,3,null,null],
+    count: 0,
+    tag: 'place',
+    desc: '1행 c=3: 충돌 없음!<br>col[1] = 3<br><b>nQueen(2)</b> 호출.'
+  },
+  {
+    queens: [[0,1],[1,3],[2,0]],
+    highlight: [[2,0]],
+    conflict: [],
+    stack: [{row:0,status:'done'},{row:1,status:'done'},{row:2,status:'done'},{row:3,status:'active'}],
+    col: [1,3,0,null],
+    count: 0,
+    tag: 'place',
+    desc: '2행 c=0: 충돌 없음!<br>col[2] = 0<br><b>nQueen(3)</b> 호출.'
+  },
+  {
+    queens: [[0,1],[1,3],[2,0],[3,2]],
+    highlight: [[3,2]],
+    conflict: [],
+    stack: [{row:0,status:'done'},{row:1,status:'done'},{row:2,status:'done'},{row:3,status:'done'},{row:4,status:'active'}],
+    col: [1,3,0,2],
+    count: 0,
+    tag: 'place',
+    desc: '3행 c=2: 충돌 없음!<br>col[3] = 2<br><b>nQueen(4)</b> 호출!'
+  },
+  {
+    queens: [[0,1],[1,3],[2,0],[3,2]],
+    highlight: [],
+    conflict: [],
+    stack: [{row:0,status:'done'},{row:1,status:'done'},{row:2,status:'done'},{row:3,status:'done'},{row:4,status:'active'}],
+    col: [1,3,0,2],
+    count: 1,
+    tag: 'success',
+    desc: '<b>🎉 row == n (4 == 4)!</b><br>모든 행에 퀸을 다 놓았어요.<br><b>count++ → count = 1</b><br>return → 되돌아가서 계속 탐색...'
+  },
+  {
+    queens: [[0,2]],
+    highlight: [[0,2]],
+    conflict: [],
+    stack: [{row:0,status:'done'},{row:1,status:'active'}],
+    col: [2,null,null,null],
+    count: 1,
+    tag: 'place',
+    desc: '계속 탐색... 0행 c=2 시도.<br>col[0] = 2<br><b>nQueen(1)</b> 호출.'
+  },
+  {
+    queens: [[0,2],[1,0]],
+    highlight: [[1,0]],
+    conflict: [],
+    stack: [{row:0,status:'done'},{row:1,status:'done'},{row:2,status:'active'}],
+    col: [2,0,null,null],
+    count: 1,
+    tag: 'place',
+    desc: '1행 c=0: 충돌 없음!<br>col[1] = 0<br><b>nQueen(2)</b> 호출.'
+  },
+  {
+    queens: [[0,2],[1,0],[2,3]],
+    highlight: [[2,3]],
+    conflict: [],
+    stack: [{row:0,status:'done'},{row:1,status:'done'},{row:2,status:'done'},{row:3,status:'active'}],
+    col: [2,0,3,null],
+    count: 1,
+    tag: 'place',
+    desc: '2행 c=3: 충돌 없음!<br>col[2] = 3<br><b>nQueen(3)</b> 호출.'
+  },
+  {
+    queens: [[0,2],[1,0],[2,3],[3,1]],
+    highlight: [[3,1]],
+    conflict: [],
+    stack: [{row:0,status:'done'},{row:1,status:'done'},{row:2,status:'done'},{row:3,status:'done'},{row:4,status:'active'}],
+    col: [2,0,3,1],
+    count: 1,
+    tag: 'place',
+    desc: '3행 c=1: 충돌 없음!<br>col[3] = 1<br><b>nQueen(4)</b> 호출!'
+  },
+  {
+    queens: [[0,2],[1,0],[2,3],[3,1]],
+    highlight: [],
+    conflict: [],
+    stack: [{row:0,status:'done'},{row:1,status:'done'},{row:2,status:'done'},{row:3,status:'done'},{row:4,status:'active'}],
+    col: [2,0,3,1],
+    count: 2,
+    tag: 'success',
+    desc: '<b>🎉 row == n (4 == 4)!</b><br>두 번째 유효한 배치 발견!<br><b>count++ → count = 2</b><br>이후 모든 경우를 다 탐색해도<br>더 이상 유효한 배치 없음.<br><b>최종 답: 2</b>'
+  },
+];
+
+let currentStep = 0;
+
+function renderBoard(step) {
+  const board = document.getElementById('board');
+  board.innerHTML = '';
+  
+  const queenSet = new Set(step.queens.map(([r,c]) => `${r},${c}`));
+  const conflictSet = new Set(step.conflict.map(([r,c]) => `${r},${c}`));
+  const highlightSet = new Set(step.highlight.map(([r,c]) => `${r},${c}`));
+  
+  for (let r = 0; r < 4; r++) {
+    for (let c = 0; c < 4; c++) {
+      const cell = document.createElement('div');
+      const isWhite = (r + c) % 2 === 0;
+      cell.className = 'cell ' + (isWhite ? 'white' : 'black');
+      
+      const key = `${r},${c}`;
+      if (conflictSet.has(key)) cell.classList.add('conflict');
+      else if (highlightSet.has(key)) cell.classList.add('highlight');
+      
+      if (queenSet.has(key)) cell.textContent = '♛';
+      
+      // 행 번호
+      if (c === 0) {
+        const label = document.createElement('span');
+        label.style.cssText = 'position:absolute;left:2px;top:2px;font-size:9px;color:#999;';
+        label.textContent = r + '행';
+        cell.appendChild(label);
+      }
+      
+      board.appendChild(cell);
+    }
+  }
+}
+
+function renderStack(step) {
+  const container = document.getElementById('call-stack-items');
+  container.innerHTML = '';
+  
+  step.stack.forEach(item => {
+    const div = document.createElement('div');
+    div.className = 'stack-item ' + item.status;
+    if (item.row === 4) {
+      div.textContent = `nQueen(4) ← row==n!`;
+    } else {
+      div.textContent = `nQueen(${item.row}) ← ${item.row}행 처리 중`;
+    }
+    container.appendChild(div);
+  });
+}
+
+function renderDesc(step) {
+  const box = document.getElementById('desc-box');
+  const tagLabels = { success:'✅ 성공! count++', fail:'❌ 충돌/막힘', try:'🔍 탐색 중', place:'📌 퀸 배치' };
+  box.innerHTML = `<span class="tag ${step.tag}">${tagLabels[step.tag]}</span><br>${step.desc}`;
+}
+
+function renderColInfo(step) {
+  const colStr = step.col.map(v => v === null ? '_' : v).join(', ');
+  document.getElementById('col-info').textContent = `col = [ ${colStr} ]`;
+  document.getElementById('count-display').textContent = step.count;
+}
+
+function render() {
+  const step = steps[currentStep];
+  renderBoard(step);
+  renderStack(step);
+  renderDesc(step);
+  renderColInfo(step);
+  document.getElementById('step-counter').textContent = `${currentStep+1} / ${steps.length}`;
+  document.getElementById('btn-prev').disabled = currentStep === 0;
+  document.getElementById('btn-next').disabled = currentStep === steps.length - 1;
+}
+
+function prev() { if (currentStep > 0) { currentStep--; render(); } }
+function next() { if (currentStep < steps.length - 1) { currentStep++; render(); } }
+
+render();
+</script>
+</body>
+</html>
